@@ -1,0 +1,96 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  --color-brand: #2fa084;
+  --color-brand-light: #3bc99a;
+  --color-brand-dark: #248a6d;
+  --color-cream: #fff6de;
+  --color-cream-muted: #fff6de99;
+  --color-surface: #0a0a0b;
+  --color-surface-elevated: #111113;
+  --color-surface-card: #18181b;
+  --color-border-glow: #2fa08440;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+@layer base {
+  * {
+    @apply border-zinc-800/80;
+  }
+
+  html {
+    @apply scroll-smooth antialiased;
+  }
+
+  body {
+    @apply bg-surface font-sans text-zinc-300;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, #2fa08418, transparent),
+      radial-gradient(ellipse 60% 40% at 100% 0%, #fff6de08, transparent);
+  }
+
+  #root {
+    @apply min-h-svh w-full max-w-none border-0 text-left;
+  }
+
+  ::selection {
+    @apply bg-brand/30 text-cream;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply border border-white/10 bg-zinc-900/40 backdrop-blur-xl;
+  }
+
+  .glass-strong {
+    @apply border border-white/[0.12] bg-zinc-900/70 backdrop-blur-2xl;
+  }
+
+  .glow-border {
+    box-shadow:
+      0 0 0 1px #2fa08430,
+      0 0 24px -4px #2fa08425;
+  }
+
+  .glow-border-hover:hover {
+    box-shadow:
+      0 0 0 1px #2fa08460,
+      0 0 32px -4px #2fa08440;
+  }
+
+  .text-gradient {
+    @apply bg-gradient-to-r from-brand via-brand-light to-cream bg-clip-text text-transparent;
+  }
+
+  .text-gradient-subtle {
+    @apply bg-gradient-to-r from-zinc-100 via-cream to-brand-light bg-clip-text text-transparent;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #2fa08450 transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-brand/40;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  .grid-bg {
+    background-image:
+      linear-gradient(#ffffff06 1px, transparent 1px),
+      linear-gradient(90deg, #ffffff06 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+}
