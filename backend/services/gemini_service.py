@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os
+from io import BytesIO
 from urllib.parse import urlparse
 
 import httpx
@@ -19,10 +21,19 @@ client = genai.Client(
     ),
 )
 
-MODEL = "Gemini API Key Image Gen"
+IMAGE_MODEL = os.getenv(
+    "GEMINI_IMAGE_MODEL",
+    "gemini-2.0-flash-preview-image-generation",
+)
+IMAGE_PROVIDER = os.getenv("IMAGE_PROVIDER", "").strip().lower()
+HF_TOKEN = os.getenv("HF_TOKEN", "").strip()
+HF_IMAGE_MODEL = os.getenv(
+    "HF_IMAGE_MODEL",
+    "black-forest-labs/FLUX.1-Kontext-dev",
+)
 
-# Only one Gemini request at a time across the whole server process.
-_gemini_lock = asyncio.Lock()
+# Only one generation request at a time across the whole server process.
+_generation_lock = asyncio.Lock()
 
 
 def _is_trusted_headshot_url(headshot_url: str) -> bool:
@@ -69,13 +80,52 @@ def _friendly_rate_limit_message(error: ClientError) -> str:
     )
 
 
-async def generate_thumbnail(
+def _image_to_png_bytes(image) -> bytes:
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _generate_with_huggingface(
     prompt: str,
     style_prompt: str,
     headshot_bytes: bytes,
     mime_type: str,
 ) -> bytes:
-    """Single Gemini API call — no retries."""
+    try:
+        from huggingface_hub import InferenceClient
+    except ImportError as exc:
+        raise RuntimeError(
+            "Hugging Face support is enabled but `huggingface_hub` is not installed. "
+            "Run `pip install -r backend/requirements.txt` and restart the backend."
+        ) from exc
+
+    if not HF_TOKEN:
+        raise RuntimeError("HF_TOKEN is missing from the environment")
+
+    hf_client = InferenceClient(api_key=HF_TOKEN)
+    full_prompt = (
+        f"{style_prompt}\n\n"
+        f"User request: {prompt}\n\n"
+        "IMPORTANT: Edit the provided headshot into a YouTube thumbnail style image. "
+        "Keep the face recognizable, make the composition bold and attention-grabbing, "
+        "and preserve a clean thumbnail layout."
+    )
+
+    image = hf_client.image_to_image(
+        image=headshot_bytes,
+        prompt=full_prompt,
+        model=HF_IMAGE_MODEL,
+    )
+    return _image_to_png_bytes(image)
+
+
+async def _generate_with_gemini(
+    prompt: str,
+    style_prompt: str,
+    headshot_bytes: bytes,
+    mime_type: str,
+) -> bytes:
     full_prompt = (
         f"{style_prompt}\n\n"
         f"User request: {prompt}\n\n"
@@ -83,21 +133,49 @@ async def generate_thumbnail(
         "in the input and be visually appealing."
     )
 
-    async with _gemini_lock:
-        try:
-            response = await client.aio.models.generate_content(
-                model=MODEL,
-                contents=[
-                    types.Part.from_bytes(data=headshot_bytes, mime_type=mime_type),
-                    full_prompt,
-                ],
-                config=types.GenerateContentConfig(
-                    response_modalities=["IMAGE"],
-                    image_config=types.ImageConfig(aspect_ratio="3:2"),
-                ),
+    response = await client.aio.models.generate_content(
+        model=IMAGE_MODEL,
+        contents=[
+            types.Part.from_bytes(data=headshot_bytes, mime_type=mime_type),
+            full_prompt,
+        ],
+        config=types.GenerateContentConfig(
+            response_modalities=["IMAGE"],
+            image_config=types.ImageConfig(aspect_ratio="3:2"),
+        ),
+    )
+    return _extract_image_bytes(response)
+
+
+async def generate_thumbnail(
+    prompt: str,
+    style_prompt: str,
+    headshot_bytes: bytes,
+    mime_type: str,
+) -> bytes:
+    """Generate one image using the configured provider."""
+    async with _generation_lock:
+        if IMAGE_PROVIDER == "huggingface":
+            return await asyncio.to_thread(
+                _generate_with_huggingface,
+                prompt,
+                style_prompt,
+                headshot_bytes,
+                mime_type,
             )
-            return _extract_image_bytes(response)
+
+        try:
+            return await _generate_with_gemini(prompt, style_prompt, headshot_bytes, mime_type)
         except ClientError as e:
+            if e.code == 429 and HF_TOKEN:
+                logger.warning("Gemini rate limit hit; falling back to Hugging Face")
+                return await asyncio.to_thread(
+                    _generate_with_huggingface,
+                    prompt,
+                    style_prompt,
+                    headshot_bytes,
+                    mime_type,
+                )
             if e.code == 429:
                 logger.warning("Gemini rate limit (single attempt, no retry)")
                 raise RuntimeError(_friendly_rate_limit_message(e)) from e

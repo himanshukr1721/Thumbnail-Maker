@@ -6,3 +6,5 @@ google-genai>=1.0.0
 imagekitio==5.0.0
 httpx==0.28.1
 python-multipart==0.0.20
+huggingface_hub>=0.34.0
+Pillow>=11.0.0
