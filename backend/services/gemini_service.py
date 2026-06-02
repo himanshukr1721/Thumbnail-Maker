@@ -1,12 +1,13 @@
 import asyncio
 import logging
+from urllib.parse import urlparse
 
 import httpx
 from google import genai
 from google.genai import types
 from google.genai.errors import ClientError
 
-from config import GEMINI_API_KEY
+from config import GEMINI_API_KEY, IMAGEKIT_URL_ENDPOINT
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,22 @@ MODEL = "Gemini API Key Image Gen"
 _gemini_lock = asyncio.Lock()
 
 
+def _is_trusted_headshot_url(headshot_url: str) -> bool:
+    if not IMAGEKIT_URL_ENDPOINT:
+        return False
+
+    parsed_url = urlparse(headshot_url)
+    if parsed_url.scheme not in ("http", "https"):
+        return False
+
+    trusted_prefix = IMAGEKIT_URL_ENDPOINT.rstrip("/")
+    return headshot_url == trusted_prefix or headshot_url.startswith(f"{trusted_prefix}/")
+
+
 async def fetch_headshot(headshot_url: str) -> tuple[bytes, str]:
+    if not _is_trusted_headshot_url(headshot_url):
+        raise ValueError("Untrusted headshot URL")
+
     async with httpx.AsyncClient() as http:
         response = await http.get(headshot_url, timeout=30.0)
         response.raise_for_status()
